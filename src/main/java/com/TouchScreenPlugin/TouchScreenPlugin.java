@@ -44,12 +44,21 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 	private Point dragStartPoint = null;
 
-	private WidgetInfo[] widgetIds = new WidgetInfo[] {
-		WidgetInfo.BANK_CONTAINER,
-		WidgetInfo.WORLD_MAP_VIEW,
-		WidgetInfo.CHATBOX,
-		WidgetInfo.INVENTORY,
-		WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER
+	private WidgetInfo[] quickWidgets = new WidgetInfo[] {
+		WidgetInfo.MINIMAP_QUICK_PRAYER_ORB,
+		WidgetInfo.MINIMAP_TOGGLE_RUN_ORB,
+		WidgetInfo.MINIMAP_SPEC_ORB,
+		WidgetInfo.MINIMAP_HEALTH_ORB
+	};
+
+	private WidgetInfo[] dragWidgets = new WidgetInfo[] {
+			WidgetInfo.BANK_CONTAINER,
+			WidgetInfo.WORLD_MAP_VIEW,
+			WidgetInfo.CHATBOX,
+			WidgetInfo.FIXED_VIEWPORT_INVENTORY_CONTAINER,
+			WidgetInfo.RESIZABLE_VIEWPORT_INVENTORY_CONTAINER,
+			WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_INVENTORY_CONTAINER,
+			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER
 	};
 
 	@Override
@@ -79,18 +88,26 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			return mouseEvent;
 		}
 
-		if (forceLeftClick || mouseIsOverGui(mouseEvent)) {
+		// Avoid adding lag to prayer flicking and such
+		if (forceLeftClick || mouseIsOverGui(mouseEvent.getPoint(), quickWidgets, false)) {
 			forceLeftClick = false;
 			return mouseEvent;
 		}
 
-		Widget draggingWidget = client.getDraggedWidget();
-		if (draggingWidget != null) {
-			return mouseEvent;
-		}
+		// We need to be on the client thread to properly check widget visibility
+		clientThread.invokeLater(() -> {
+			if (mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
+				forceLeftClick = true;
+				mouseEvent.getComponent().dispatchEvent(
+					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+				);
+				return;
+			}
 
-		dragStartPoint = mouseEvent.getPoint();
-		leftMouseButtonDown = true;
+			dragStartPoint = mouseEvent.getPoint();
+			leftMouseButtonDown = true;
+		});
+
 		mouseEvent.consume();
 		return mouseEvent;
 	}
@@ -132,10 +149,11 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			component.dispatchEvent(
 				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON2, true)
 			);
-			return mouseEvent;
 		} else {
 			final long t = System.currentTimeMillis();
 			clientThread.invokeLater(() -> {
+				// Wait a few ms to fix the dead click bug on touch screens
+				// Is RS polling the mouse position somewhere instead of using events?
 				long delta = System.currentTimeMillis() - t;
 				if (delta < config.touchDelayMs()){
 					return false;
@@ -143,12 +161,12 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 				forceLeftClick = true;
 				component.dispatchEvent(
-						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
 				);
 				return true;
 			});
-			return mouseEvent;
 		}
+		return mouseEvent;
 	}
 
 	@Override
@@ -165,13 +183,12 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		return SwingUtilities.isLeftMouseButton(mouseEvent);
 	}
 
-	private boolean mouseIsOverGui(MouseEvent mouseEvent)
+	private boolean mouseIsOverGui(Point point, WidgetInfo[] widgets, boolean onThread)
 	{
-		net.runelite.api.Point point = new net.runelite.api.Point(mouseEvent.getX(), mouseEvent.getY());
-		for (WidgetInfo widgetInfo : widgetIds) {
+		net.runelite.api.Point rlPoint = new net.runelite.api.Point(point.x, point.y);
+		for (WidgetInfo widgetInfo : widgets) {
 			Widget widget = client.getWidget(widgetInfo);
-			if (testWidget(widget, point)) {
-				System.out.println(widget.getId() + " - " + widget.getName());
+			if (testWidget(widget, rlPoint, onThread)) {
 				return true;
 			}
 		}
@@ -179,20 +196,27 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		return false;
 	}
 
-	private boolean testWidget(Widget widget, net.runelite.api.Point point) {
+	private boolean testWidget(Widget widget, net.runelite.api.Point point, boolean onThread)
+	{
 		if (widget == null) {
 			return false;
 		}
 
-		if (!widget.isSelfHidden() && widget.contains(point)) {
-			return true;
+		if (onThread) {
+			if (widget.contains(point) && !widget.isHidden()) {
+				return true;
+			}
+		} else {
+			if (!widget.isSelfHidden() && widget.contains(point)) {
+				return true;
+			}
 		}
 
 		// Got some NPEs from the children accessors in some situations, hence the trys
 		try {
 			Widget[] widgets = widget.getChildren();
 			for (Widget child : widgets) {
-				if (testWidget(child, point)) {
+				if (testWidget(child, point, onThread)) {
 					return true;
 				}
 			}
@@ -200,7 +224,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		try {
 			Widget[] widgets = widget.getStaticChildren();
 			for (Widget child : widgets) {
-				if (testWidget(child, point)) {
+				if (testWidget(child, point, onThread)) {
 					return true;
 				}
 			}
@@ -208,7 +232,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		try {
 			Widget[] widgets = widget.getDynamicChildren();
 			for (Widget child : widgets) {
-				if (testWidget(child, point)) {
+				if (testWidget(child, point, onThread)) {
 					return true;
 				}
 			}
@@ -236,16 +260,5 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			mouseEvent.isPopupTrigger(),
 			button
 		);
-	}
-
-	// Inverses the translation logic from TranslateMouseListener.java
-	// Ensures the mouse position is not double translated
-	private Point untranslatePoint(Point point)
-	{
-		Dimension stretchedDimensions = client.getStretchedDimensions();
-		Dimension realDimensions = client.getRealDimensions();
-		int x = (int) (point.getX() * (stretchedDimensions.width / realDimensions.getWidth()));
-		int y = (int) (point.getY() * (stretchedDimensions.height / realDimensions.getHeight()));
-		return new Point(x, y);
 	}
 }
