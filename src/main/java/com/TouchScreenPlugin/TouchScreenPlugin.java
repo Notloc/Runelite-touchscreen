@@ -90,6 +90,9 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			return mouseEvent;
 		}
 
+		// Interaction seems to favor the previous mouse position for some reason, so we need to move the mouse manually
+		mouseEvent.getComponent().dispatchEvent(rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, 0, true));
+
 		dragStartPoint = mouseEvent.getPoint();
 		leftMouseButtonDown = true;
 		mouseEvent.consume();
