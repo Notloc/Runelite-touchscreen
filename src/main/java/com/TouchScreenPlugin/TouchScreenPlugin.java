@@ -10,6 +10,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetID;
 import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
@@ -29,6 +30,9 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 	private Client client;
 
 	@Inject
+	private ClientThread clientThread;
+
+	@Inject
 	private TouchScreenConfig config;
 
 	@Inject
@@ -42,15 +46,10 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 	private WidgetInfo[] widgetIds = new WidgetInfo[] {
 		WidgetInfo.BANK_CONTAINER,
-		WidgetInfo.GENERIC_SCROLL_TEXT,
 		WidgetInfo.WORLD_MAP_VIEW,
 		WidgetInfo.CHATBOX,
 		WidgetInfo.INVENTORY,
-		WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_TABS1,
-		WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_TABS2,
-		WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER,
-		WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_CHATBOX_PARENT,
-		WidgetInfo.SETTINGS_INIT
+		WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER
 	};
 
 	@Override
@@ -89,9 +88,6 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		if (draggingWidget != null) {
 			return mouseEvent;
 		}
-
-		// Interaction seems to favor the previous mouse position for some reason, so we need to move the mouse manually
-		mouseEvent.getComponent().dispatchEvent(rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, 0, true));
 
 		dragStartPoint = mouseEvent.getPoint();
 		leftMouseButtonDown = true;
@@ -138,10 +134,19 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			);
 			return mouseEvent;
 		} else {
-			forceLeftClick = true;
-			component.dispatchEvent(
-				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
-			);
+			final long t = System.currentTimeMillis();
+			clientThread.invokeLater(() -> {
+				long delta = System.currentTimeMillis() - t;
+				if (delta < config.touchDelayMs()){
+					return false;
+				}
+
+				forceLeftClick = true;
+				component.dispatchEvent(
+						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+				);
+				return true;
+			});
 			return mouseEvent;
 		}
 	}
@@ -166,6 +171,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		for (WidgetInfo widgetInfo : widgetIds) {
 			Widget widget = client.getWidget(widgetInfo);
 			if (testWidget(widget, point)) {
+				System.out.println(widget.getId() + " - " + widget.getName());
 				return true;
 			}
 		}
@@ -218,7 +224,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 	private MouseEvent rebuildMouseEvent(MouseEvent mouseEvent, Integer type, Integer button, boolean forDispatch)
 	{
-		Point point = forDispatch ? untranslatePoint(mouseEvent.getPoint()) : mouseEvent.getPoint();
+		Point point = forDispatch ? client.getCanvas().getMousePosition() : mouseEvent.getPoint();
 		return new MouseEvent(
 			mouseEvent.getComponent(),
 			type,
