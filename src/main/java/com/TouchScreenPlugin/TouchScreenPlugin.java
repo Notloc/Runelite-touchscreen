@@ -175,8 +175,6 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			return false;
 		}
 
-		widget.setOpacity(128);
-
 		if (!widget.isSelfHidden() && widget.contains(point)) {
 			return true;
 		}
