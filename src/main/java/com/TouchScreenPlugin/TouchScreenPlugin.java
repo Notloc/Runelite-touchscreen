@@ -64,6 +64,10 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			WidgetInfo.WORLD_SWITCHER_BUTTON
 	};
 
+	private WidgetInfo[] dragWidgets_noChild = new WidgetInfo[] {
+			WidgetInfo.CHATBOX_PARENT
+	};
+
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -98,7 +102,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		}
 
 		clientThread.invokeLater(() -> {
-			if (leftMouseButtonDown && mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
+			if (leftMouseButtonDown && isMouseOverDragWidget(mouseEvent.getPoint(), true)) {
 				forceLeftClick = true;
 				guiDown = true;
 				canRotate = false;
@@ -164,7 +168,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 				// Is RS polling the mouse position somewhere instead of using events?
 				// We also fire immediately if you're over a drag gui
 				long delta = System.currentTimeMillis() - t;
-				if (delta < config.touchDelayMs() && !mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
+				if (delta < config.touchDelayMs() && !isMouseOverDragWidget(mouseEvent.getPoint(), true)) {
 					return false;
 				}
 
@@ -198,6 +202,10 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		return SwingUtilities.isLeftMouseButton(mouseEvent);
 	}
 
+	private boolean isMouseOverDragWidget(Point point, boolean onThread) {
+		return mouseIsOverGui_noChild(point, dragWidgets_noChild, onThread) || mouseIsOverGui(point, dragWidgets, onThread);
+	}
+
 	private boolean mouseIsOverGui(Point point, WidgetInfo[] widgets, boolean onThread)
 	{
 		net.runelite.api.Point rlPoint = new net.runelite.api.Point(point.x, point.y);
@@ -211,7 +219,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		return false;
 	}
 
-	private boolean mouseIsOverGui_NoChild(Point point, WidgetInfo[] widgets, boolean onThread)
+	private boolean mouseIsOverGui_noChild(Point point, WidgetInfo[] widgets, boolean onThread)
 	{
 		net.runelite.api.Point rlPoint = new net.runelite.api.Point(point.x, point.y);
 		for (WidgetInfo widgetInfo : widgets) {
