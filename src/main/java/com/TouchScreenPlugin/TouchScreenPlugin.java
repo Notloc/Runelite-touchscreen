@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetID;
 import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -41,7 +40,8 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 	private boolean leftMouseButtonDown = false;
 	private boolean forceLeftClick = false;
 	private boolean isRotating = false;
-
+	private boolean canRotate = false;
+	private boolean guiDown = false;
 	private Point dragStartPoint = null;
 
 	private WidgetInfo[] quickWidgets = new WidgetInfo[] {
@@ -53,12 +53,15 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 	private WidgetInfo[] dragWidgets = new WidgetInfo[] {
 			WidgetInfo.BANK_CONTAINER,
+			WidgetInfo.BANK_INVENTORY_ITEMS_CONTAINER,
 			WidgetInfo.WORLD_MAP_VIEW,
-			WidgetInfo.CHATBOX,
 			WidgetInfo.FIXED_VIEWPORT_INVENTORY_CONTAINER,
 			WidgetInfo.RESIZABLE_VIEWPORT_INVENTORY_CONTAINER,
 			WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_INVENTORY_CONTAINER,
-			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER
+			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER,
+			WidgetInfo.GENERIC_SCROLL_TEXT,
+			WidgetInfo.WORLD_SWITCHER_LIST,
+			WidgetInfo.WORLD_SWITCHER_BUTTON
 	};
 
 	@Override
@@ -94,19 +97,21 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 			return mouseEvent;
 		}
 
-		// We need to be on the client thread to properly check widget visibility
 		clientThread.invokeLater(() -> {
-			if (mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
+			if (leftMouseButtonDown && mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
 				forceLeftClick = true;
+				guiDown = true;
+				canRotate = false;
 				mouseEvent.getComponent().dispatchEvent(
 					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
 				);
-				return;
 			}
-
-			dragStartPoint = mouseEvent.getPoint();
-			leftMouseButtonDown = true;
 		});
+
+		guiDown = false;
+		canRotate = true;
+		dragStartPoint = mouseEvent.getPoint();
+		leftMouseButtonDown = true;
 
 		mouseEvent.consume();
 		return mouseEvent;
@@ -114,7 +119,7 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 
 	@Override
 	public MouseEvent mouseDragged(MouseEvent mouseEvent) {
-		if (!leftMouseButtonDown || !isLeftMouse(mouseEvent)) {
+		if (!leftMouseButtonDown || !isLeftMouse(mouseEvent) || !canRotate) {
 			return mouseEvent;
 		}
 
@@ -150,18 +155,28 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON2, true)
 			);
 		} else {
+			mouseEvent.consume();
+
 			final long t = System.currentTimeMillis();
+			// We need to be on the client thread to properly check widget visibility
 			clientThread.invokeLater(() -> {
 				// Wait a few ms to fix the dead click bug on touch screens
 				// Is RS polling the mouse position somewhere instead of using events?
+				// We also fire immediately if you're over a drag gui
 				long delta = System.currentTimeMillis() - t;
-				if (delta < config.touchDelayMs()){
+				if (delta < config.touchDelayMs() && !mouseIsOverGui(mouseEvent.getPoint(), dragWidgets, true)) {
 					return false;
 				}
 
-				forceLeftClick = true;
-				component.dispatchEvent(
-					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+				if (!guiDown) {
+					forceLeftClick = true;
+					mouseEvent.getComponent().dispatchEvent(
+							rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+					);
+				}
+
+				mouseEvent.getComponent().dispatchEvent(
+						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, true)
 				);
 				return true;
 			});
@@ -188,6 +203,19 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		net.runelite.api.Point rlPoint = new net.runelite.api.Point(point.x, point.y);
 		for (WidgetInfo widgetInfo : widgets) {
 			Widget widget = client.getWidget(widgetInfo);
+			if (testWidgetRecursive(widget, rlPoint, onThread)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private boolean mouseIsOverGui_NoChild(Point point, WidgetInfo[] widgets, boolean onThread)
+	{
+		net.runelite.api.Point rlPoint = new net.runelite.api.Point(point.x, point.y);
+		for (WidgetInfo widgetInfo : widgets) {
+			Widget widget = client.getWidget(widgetInfo);
 			if (testWidget(widget, rlPoint, onThread)) {
 				return true;
 			}
@@ -196,8 +224,42 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 		return false;
 	}
 
-	private boolean testWidget(Widget widget, net.runelite.api.Point point, boolean onThread)
+	private boolean testWidgetRecursive(Widget widget, net.runelite.api.Point point, boolean onThread)
 	{
+		if (testWidget(widget, point, onThread)) {
+			return true;
+		}
+
+		// Got some NPEs from the children accessors in some situations, hence the trys
+		try {
+			Widget[] widgets = widget.getChildren();
+			for (Widget child : widgets) {
+				if (testWidgetRecursive(child, point, onThread)) {
+					return true;
+				}
+			}
+		} catch (Exception e) {}
+		try {
+			Widget[] widgets = widget.getStaticChildren();
+			for (Widget child : widgets) {
+				if (testWidgetRecursive(child, point, onThread)) {
+					return true;
+				}
+			}
+		} catch (Exception e) {}
+		try {
+			Widget[] widgets = widget.getDynamicChildren();
+			for (Widget child : widgets) {
+				if (testWidgetRecursive(child, point, onThread)) {
+					return true;
+				}
+			}
+		} catch (Exception e) {}
+
+		return false;
+	}
+
+	private boolean testWidget(Widget widget, net.runelite.api.Point point, boolean onThread) {
 		if (widget == null) {
 			return false;
 		}
@@ -211,32 +273,6 @@ public class TouchScreenPlugin extends Plugin implements MouseListener
 				return true;
 			}
 		}
-
-		// Got some NPEs from the children accessors in some situations, hence the trys
-		try {
-			Widget[] widgets = widget.getChildren();
-			for (Widget child : widgets) {
-				if (testWidget(child, point, onThread)) {
-					return true;
-				}
-			}
-		} catch (Exception e) {}
-		try {
-			Widget[] widgets = widget.getStaticChildren();
-			for (Widget child : widgets) {
-				if (testWidget(child, point, onThread)) {
-					return true;
-				}
-			}
-		} catch (Exception e) {}
-		try {
-			Widget[] widgets = widget.getDynamicChildren();
-			for (Widget child : widgets) {
-				if (testWidget(child, point, onThread)) {
-					return true;
-				}
-			}
-		} catch (Exception e) {}
 
 		return false;
 	}
