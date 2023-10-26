@@ -1,4 +1,4 @@
-package com.TouchScreenPlugin;
+package com.TouchscreenPlugin;
 
 import com.google.inject.Provides;
 import javax.inject.Inject;
@@ -25,15 +25,15 @@ import java.awt.event.MouseWheelEvent;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Touch Screen"
+	name = "Touchscreen"
 )
-public class TouchScreenPlugin extends Plugin implements MouseListener, MouseWheelListener
+public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWheelListener
 {
 	@Inject private Client client;
 	@Inject private ClientThread clientThread;
-	@Inject private DrawManager drawManager;
-	@Inject private TouchScreenConfig config;
-	@Inject private MouseManager mouseManager;
+	@Inject private DrawManager       drawManager;
+	@Inject private TouchscreenConfig config;
+	@Inject private MouseManager      mouseManager;
 
 	private boolean isTouchPressed = false;
 	private boolean isTouchingGui   = false;
@@ -112,9 +112,9 @@ public class TouchScreenPlugin extends Plugin implements MouseListener, MouseWhe
 	};
 
 	@Provides
-	TouchScreenConfig provideConfig(ConfigManager configManager)
+	TouchscreenConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(TouchScreenConfig.class);
+		return configManager.getConfig(TouchscreenConfig.class);
 	}
 
 	@Override

@@ -1,12 +1,11 @@
-package com.TouchScreenPlugin;
+package com.TouchscreenPlugin;
 
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.Units;
 
-@ConfigGroup("TouchScreen")
-public interface TouchScreenConfig extends Config
+@ConfigGroup("Touchscreen")
+public interface TouchscreenConfig extends Config
 {
 	@ConfigItem(
 		keyName = "touchDragThreshold",
