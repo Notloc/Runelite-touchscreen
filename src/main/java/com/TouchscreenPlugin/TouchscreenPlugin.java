@@ -39,9 +39,8 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	private OverlayManager overlayManager;
 
 	private boolean isTouchPressed = false;
-	private boolean isTouchingGui   = false;
-	private boolean forceLeftClick = false;
-	private boolean forceRelease = false;
+	private boolean isTouchingGui        = false;
+	private boolean forceDefaultHandling = false;
 
 	private boolean readyToRotate = false;
 	private boolean isRotating    = false;
@@ -55,10 +54,6 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	private Point rightTouchStartPoint = null;
 	private Point previousTouchPointForScrolling = null;
 	private Point scrollingHoldPoint = null;
-
-	private boolean    doEmulatedClickNextFrame    = false;
-	private boolean    waitedOneFrame              = false;
-	private MouseEvent emulatedClickEventPrototype = null;
 
 	// Widgets that are time sensitive and skip the emulated mouse click
 	private final WidgetInfo[] QUICK_WIDGETS = new WidgetInfo[] {
@@ -100,33 +95,52 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			WidgetInfo.RESIZABLE_MINIMAP_STONES_DRAW_AREA
 	};
 
-	// This runnable executes a left click one frame after it is queued.
+	private EmulatedMouseEvent mouseEventToBeProcessed = null;
+	private EmulatedMouseEvent mouseEventQueue         = null;
+
+	// We queue the click for next frame due to an input bug.
+	private void queueEmulatedMouseEvent(MouseEvent mouseEvent, int eventType, int button) {
+		// Make sure the mouse position we intend to use is known for next frame.
+		mouseEvent.getComponent().dispatchEvent(
+				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, true)
+		);
+		mouseEventQueue = new EmulatedMouseEvent(
+				eventType,
+				rebuildMouseEvent(mouseEvent, eventType, button, false)
+		);
+	}
+
+	// This runnable executes mouse events one frame after they are queued.
 	// This is needed due to an input bug where RuneScape is using an outdated mouse position
 	// for 3D interactions, causing inaccurate clicks on touchscreens.
-	private final Runnable frameListener = () -> {
-		if (!doEmulatedClickNextFrame || emulatedClickEventPrototype == null) {
-			return;
+	private final Runnable mouseEventDelayQueue = () -> {
+		if (mouseEventToBeProcessed != null) {
+			forceDefaultHandling = true;
+
+			Integer eventID = mouseEventToBeProcessed.getLeft();
+			MouseEvent eventPrototype = mouseEventToBeProcessed.getRight();
+
+			if (eventID == MouseEvent.MOUSE_CLICKED) {
+				eventPrototype.getComponent().dispatchEvent(
+						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_PRESSED, eventPrototype.getButton(), true)
+				);
+				eventPrototype.getComponent().dispatchEvent(
+						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_RELEASED, eventPrototype.getButton(), true)
+				);
+			} else if (eventID == MouseEvent.MOUSE_PRESSED) {
+				eventPrototype.getComponent().dispatchEvent(
+						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_PRESSED, eventPrototype.getButton(), true)
+				);
+			} else if (eventID == MouseEvent.MOUSE_RELEASED) {
+				eventPrototype.getComponent().dispatchEvent(
+						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_RELEASED, eventPrototype.getButton(), true)
+				);
+			}
+			forceDefaultHandling = false;
 		}
 
-		// Order of events seems to necessitate this.
-		// Otherwise, we don't actually wait a frame.
-		if (!waitedOneFrame) {
-			waitedOneFrame = true;
-			return;
-		}
-
-		forceLeftClick = true;
-		emulatedClickEventPrototype.getComponent().dispatchEvent(
-				rebuildMouseEvent(emulatedClickEventPrototype, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
-		);
-
-		forceRelease = true;
-		emulatedClickEventPrototype.getComponent().dispatchEvent(
-				rebuildMouseEvent(emulatedClickEventPrototype, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, true)
-		);
-
-		doEmulatedClickNextFrame = false;
-		emulatedClickEventPrototype = null;
+		this.mouseEventToBeProcessed = this.mouseEventQueue;
+		this.mouseEventQueue = null;
 	};
 
 	@Provides
@@ -138,10 +152,10 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	@Override
 	protected void startUp() throws Exception
 	{
-		resetState();
+		resetLeftMouseState();
 		mouseManager.registerMouseListener(this);
 		mouseManager.registerMouseWheelListener(this);
-		drawManager.registerEveryFrameListener(frameListener);
+		drawManager.registerEveryFrameListener(mouseEventDelayQueue);
 	}
 
 	@Override
@@ -149,13 +163,12 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	{
 		mouseManager.unregisterMouseListener(this);
 		mouseManager.unregisterMouseWheelListener(this);
-		drawManager.unregisterEveryFrameListener(frameListener);
+		drawManager.unregisterEveryFrameListener(mouseEventDelayQueue);
 	}
 
-	private void resetState() {
+	private void resetLeftMouseState() {
 		isTouchPressed = false;
 		isTouchingGui = false;
-		forceLeftClick = false;
 
 		readyToRotate = false;
 		isRotating = false;
@@ -171,16 +184,17 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	@Override
 	public MouseEvent mousePressed(MouseEvent mouseEvent) {
+		if (mouseEvent.getButton() == MouseEvent.BUTTON1) {
+			return handleLeftMousePressed(mouseEvent);
+		}
 		if (mouseEvent.getButton() == MouseEvent.BUTTON3) {
-			rightTouchStartPoint = mouseEvent.getPoint();
+			return handleRightMousePressed(mouseEvent);
 		}
+		return mouseEvent;
+	}
 
-		if (shouldSkipProcessing(mouseEvent)) {
-			return mouseEvent;
-		}
-
-		if (forceLeftClick) {
-			forceLeftClick = false;
+	private MouseEvent handleLeftMousePressed(MouseEvent mouseEvent) {
+		if (shouldSkipProcessing(mouseEvent) || forceDefaultHandling) {
 			return mouseEvent;
 		}
 
@@ -189,6 +203,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			return mouseEvent;
 		}
 
+		// Get on client thread to do robust visibility checks on the widgets.
 		clientThread.invokeLater(() -> {
 			if (!isTouchPressed) {
 				return;
@@ -205,16 +220,18 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 			isScrollingOnMinimap = false;
 			if (isItemUnderMouse || isMouseOverBlockingGui(mouseEvent.getPoint())) {
-				forceLeftClick = true;
 				isTouchingGui = true;
 				readyToRotate = false;
+
+				forceDefaultHandling = true;
 				mouseEvent.getComponent().dispatchEvent(
-					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
 				);
+				forceDefaultHandling = false;
 			}
 		});
 
-		resetState();
+		resetLeftMouseState();
 		isTouchPressed = true;
 		readyToRotate = true;
 		touchStartPoint = mouseEvent.getPoint();
@@ -225,9 +242,21 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 		return mouseEvent;
 	}
 
+	private MouseEvent handleRightMousePressed(MouseEvent mouseEvent) {
+		rightTouchStartPoint = mouseEvent.getPoint();
+		if (forceDefaultHandling) {
+			return mouseEvent;
+		}
+
+		queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON3);
+		mouseEvent.consume();
+		return mouseEvent;
+	}
+
 	@Override
 	public MouseEvent mouseDragged(MouseEvent mouseEvent) {
-		if (!isTouchPressed || shouldSkipProcessing(mouseEvent)) {
+		boolean isNotLeftMouse = mouseEvent.getButton() != MouseEvent.BUTTON1;
+		if (isNotLeftMouse || !isTouchPressed || shouldSkipProcessing(mouseEvent)) {
 			return mouseEvent;
 		}
 
@@ -396,16 +425,23 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	@Override
 	public MouseEvent mouseReleased(MouseEvent mouseEvent) {
-		if (mouseEvent.getButton() == MouseEvent.BUTTON3) {
-			return handleRightClickRelease(mouseEvent);
+		if (mouseEvent.getButton() == MouseEvent.BUTTON1) {
+			return handleLeftMouseReleased(mouseEvent);
 		}
 
+		if (mouseEvent.getButton() == MouseEvent.BUTTON3) {
+			return handleRightClickReleased(mouseEvent);
+		}
+
+		return mouseEvent;
+	}
+
+	private MouseEvent handleLeftMouseReleased(MouseEvent mouseEvent) {
 		if (shouldSkipProcessing(mouseEvent)) {
 			return mouseEvent;
 		}
 
-		if (forceRelease || !isTouchPressed) {
-			forceRelease = false;
+		if (forceDefaultHandling || !isTouchPressed) {
 			isTouchPressed = false;
 			return mouseEvent;
 		}
@@ -419,7 +455,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 		if (isRotating) {
 			isRotating = false;
 			mouseEvent.getComponent().dispatchEvent(
-				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON2, true)
+					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON2, true)
 			);
 			return mouseEvent;
 		}
@@ -431,24 +467,16 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			return mouseEvent;
 		}
 
-		queueEmulatedLeftClick(mouseEvent);
+		queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_CLICKED, MouseEvent.BUTTON1);
 		mouseEvent.consume();
 		return mouseEvent;
 	}
 
-	// We queue the click for next frame due to an input bug.
-	private void queueEmulatedLeftClick(MouseEvent mouseEvent) {
-		// Make sure the mouse position we intend to use is known for next frame.
-		mouseEvent.getComponent().dispatchEvent(
-				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, true)
-		);
+	private MouseEvent handleRightClickReleased(MouseEvent mouseEvent) {
+		if (shouldSkipProcessing(mouseEvent) || forceDefaultHandling) {
+			return mouseEvent;
+		}
 
-		emulatedClickEventPrototype = mouseEvent;
-		waitedOneFrame = false;
-		doEmulatedClickNextFrame = true;
-	}
-
-	private MouseEvent handleRightClickRelease(MouseEvent mouseEvent) {
 		int threshold = config.rightClickReleaseThreshold();
 		if (threshold > getDistance(mouseEvent.getPoint(), rightTouchStartPoint)) {
 			return mouseEvent;
@@ -456,7 +484,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 		if (config.rightClickReleaseOnMenus() && client.isMenuOpen()) {
 			if (isPointOverMenu(mouseEvent.getPoint())) {
-				queueEmulatedLeftClick(mouseEvent);
+				queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_CLICKED, MouseEvent.BUTTON1);
 			}
 		}
 		return mouseEvent;
@@ -481,7 +509,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	private boolean shouldSkipProcessing(MouseEvent mouseEvent)
 	{
-		return !SwingUtilities.isLeftMouseButton(mouseEvent) || mouseEvent.isConsumed() || client.getGameState() != GameState.LOGGED_IN;
+		return mouseEvent.isConsumed() || client.getGameState() != GameState.LOGGED_IN;
 	}
 
 	private boolean isMouseOverScrollableGui(Point point) {
