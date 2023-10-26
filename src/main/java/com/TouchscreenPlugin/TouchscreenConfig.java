@@ -48,4 +48,18 @@ public interface TouchscreenConfig extends Config
 			description = "Inverts the direction of minimap zooming."
 	)
 	default boolean invertMinimapZoom() { return false; }
+
+	@ConfigItem(
+			keyName = "touchRightClickReleaseOnMenus",
+			name = "Right Release Menus",
+			description = "Allows you to accept a menu entry by releasing over it."
+	)
+	default boolean rightClickReleaseOnMenus() { return false; }
+
+	@ConfigItem(
+			keyName = "touchRightClickReleaseThreshold",
+			name = "Right Release Threshold (px)",
+			description = "Allows you to accept a menu entry by releasing over it."
+	)
+	default int rightClickReleaseThreshold() { return 14; }
 }
