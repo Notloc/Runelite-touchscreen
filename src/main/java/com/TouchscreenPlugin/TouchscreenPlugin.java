@@ -18,6 +18,7 @@ import net.runelite.client.input.MouseWheelListener;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.DrawManager;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 import java.awt.*;
 import java.awt.event.MouseEvent;
@@ -34,6 +35,8 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	@Inject private DrawManager       drawManager;
 	@Inject private TouchscreenConfig config;
 	@Inject private MouseManager      mouseManager;
+
+	private OverlayManager overlayManager;
 
 	private boolean isTouchPressed = false;
 	private boolean isTouchingGui   = false;
@@ -282,7 +285,9 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			int yDelta = mouseEvent.getY() - touchStartPoint.y;
 			isScrolling3dZoom = Math.abs(xDelta) <= Math.abs(yDelta);
 
-			scrollingHoldPoint = isScrolling3dZoom ? new Point(0, 0) : touchStartPoint;
+			// 5,5 to avoid fixed mode's bezel
+			scrollingHoldPoint = isScrolling3dZoom ? new Point(5,5) : touchStartPoint;
+
 			previousTouchPointForScrolling = mouseEvent.getPoint();
 			isScrolling = true;
 			return;
