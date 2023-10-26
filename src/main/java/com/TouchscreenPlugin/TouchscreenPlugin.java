@@ -55,6 +55,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	private Point scrollingHoldPoint = null;
 
 	private boolean    doEmulatedClickNextFrame    = false;
+	private boolean    waitedOneFrame              = false;
 	private MouseEvent emulatedClickEventPrototype = null;
 
 	// Widgets that are time sensitive and skip the emulated mouse click
@@ -93,12 +94,18 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	private final WidgetInfo[] MINIMAP_WIDGETS = new WidgetInfo[] {
 			WidgetInfo.FIXED_VIEWPORT_MINIMAP_DRAW_AREA,
-			WidgetInfo.RESIZABLE_MINIMAP_DRAW_AREA
+			WidgetInfo.RESIZABLE_MINIMAP_DRAW_AREA,
+			WidgetInfo.RESIZABLE_MINIMAP_STONES_DRAW_AREA
 	};
 
 	private final Runnable frameListener = () -> {
 		if (!doEmulatedClickNextFrame || emulatedClickEventPrototype == null) {
 			return;
+		}
+
+		// Order of events seems to necessitate this
+		if (!waitedOneFrame) {
+			waitedOneFrame = true;
 		}
 
 		forceLeftClick = true;
@@ -285,8 +292,8 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			int yDelta = mouseEvent.getY() - touchStartPoint.y;
 			isScrolling3dZoom = Math.abs(xDelta) <= Math.abs(yDelta);
 
-			// 5,5 to avoid fixed mode's bezel
-			scrollingHoldPoint = isScrolling3dZoom ? new Point(5,5) : touchStartPoint;
+			// 12,12 to avoid fixed mode's bezel
+			scrollingHoldPoint = isScrolling3dZoom ? new Point(12,12) : touchStartPoint;
 
 			previousTouchPointForScrolling = mouseEvent.getPoint();
 			isScrolling = true;
@@ -357,6 +364,8 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	@Override
 	public MouseWheelEvent mouseWheelMoved(MouseWheelEvent event) {
 		if (isScrolling) {
+			System.out.println("Mouse wheel at: " + event.getPoint());
+
 			// Prevent the mouse from moving from the client's perspective
 			event = new MouseWheelEvent(
 					event.getComponent(),
@@ -414,6 +423,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, true)
 		);
 		emulatedClickEventPrototype = mouseEvent;
+		waitedOneFrame = false;
 		doEmulatedClickNextFrame = true;
 	}
 
