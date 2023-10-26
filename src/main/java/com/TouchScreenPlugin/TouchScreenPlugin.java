@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.hooks.Callbacks;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetID;
 import net.runelite.api.widgets.WidgetInfo;
@@ -18,6 +19,7 @@ import net.runelite.client.input.MouseManager;
 import net.runelite.client.input.MouseWheelListener;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.DrawManager;
 
 import java.awt.*;
 import java.awt.event.MouseEvent;
@@ -34,6 +36,9 @@ public class TouchScreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	@Inject
 	private ClientThread clientThread;
+
+	@Inject
+	private DrawManager drawManager;
 
 	@Inject
 	private TouchScreenConfig config;
@@ -268,32 +273,23 @@ public class TouchScreenPlugin extends Plugin implements MouseListener, MouseWhe
 		}
 
 		// Emulate left click
-
-		mouseEvent.consume();
-
-		final long t = System.currentTimeMillis();
-		// We need to be on the client thread to properly check widget visibility
 		clientThread.invokeLater(() -> {
-//			// Wait a few ms to fix the dead click bug on touch screens
-//			// Is RS polling the mouse position somewhere instead of using events?
-//			long delta = System.currentTimeMillis() - t;
-//			if (delta < config.touchDelayMs()) {
-//				return false;
-//			}
-
 			mouseEvent.getComponent().dispatchEvent(
 				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, true)
 			);
-			forceLeftClick = true;
-			mouseEvent.getComponent().dispatchEvent(
-					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
-			);
-			mouseEvent.getComponent().dispatchEvent(
-					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, true)
-			);
-			return true;
+
+			drawManager.requestNextFrameListener((__) -> {
+				forceLeftClick = true;
+				mouseEvent.getComponent().dispatchEvent(
+						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+				);
+				mouseEvent.getComponent().dispatchEvent(
+						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, true)
+				);
+			});
 		});
 
+		mouseEvent.consume();
 		return mouseEvent;
 	}
 
