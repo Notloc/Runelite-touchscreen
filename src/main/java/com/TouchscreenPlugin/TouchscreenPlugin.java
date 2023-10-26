@@ -127,11 +127,12 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 				eventPrototype.getComponent().dispatchEvent(
 						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_RELEASED, eventPrototype.getButton(), true)
 				);
-			} else if (eventID == MouseEvent.MOUSE_PRESSED || eventID == MouseEvent.MOUSE_RELEASED) {
+			} else if (eventID == MouseEvent.MOUSE_PRESSED || eventID == MouseEvent.MOUSE_RELEASED || eventID == MouseEvent.MOUSE_DRAGGED) {
 				eventPrototype.getComponent().dispatchEvent(
 						rebuildMouseEvent(eventPrototype, eventID, eventPrototype.getButton(), true)
 				);
 			}
+
 			forceDefaultHandling = false;
 		}
 
@@ -275,15 +276,14 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 		if (!isRotating) {
 			// Fire middle mouse click event to start camera rotation
-			Component component = mouseEvent.getComponent();
-			component.dispatchEvent(
-					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON2, true)
-			);
+			queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON2);
+			isRotating = true;
+			mouseEvent.consume();
+			return mouseEvent;
+		} else {
+			// Replace the left click drag with a middle click drag
+			return rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_DRAGGED, MouseEvent.BUTTON2, false);
 		}
-		isRotating = true;
-
-		// Replace the left mouse drag with a middle mouse drag
-		return rebuildMouseEvent(mouseEvent, mouseEvent.getID(), MouseEvent.BUTTON2, false);
 	}
 
 	private MouseEvent emulateScrolling(MouseEvent mouseEvent) {
