@@ -274,15 +274,16 @@ public class TouchScreenPlugin extends Plugin implements MouseListener, MouseWhe
 		final long t = System.currentTimeMillis();
 		// We need to be on the client thread to properly check widget visibility
 		clientThread.invokeLater(() -> {
-			// Wait a few ms to fix the dead click bug on touch screens
-			// Is RS polling the mouse position somewhere instead of using events?
-			long delta = System.currentTimeMillis() - t;
-			if (delta < config.touchDelayMs()) {
-				return false;
-			}
+//			// Wait a few ms to fix the dead click bug on touch screens
+//			// Is RS polling the mouse position somewhere instead of using events?
+//			long delta = System.currentTimeMillis() - t;
+//			if (delta < config.touchDelayMs()) {
+//				return false;
+//			}
 
-			// Wait, could I just force a MouseMoved event instead of delaying?
-
+			mouseEvent.getComponent().dispatchEvent(
+				rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, true)
+			);
 			forceLeftClick = true;
 			mouseEvent.getComponent().dispatchEvent(
 					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
