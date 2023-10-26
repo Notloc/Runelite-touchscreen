@@ -127,13 +127,9 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 				eventPrototype.getComponent().dispatchEvent(
 						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_RELEASED, eventPrototype.getButton(), true)
 				);
-			} else if (eventID == MouseEvent.MOUSE_PRESSED) {
+			} else if (eventID == MouseEvent.MOUSE_PRESSED || eventID == MouseEvent.MOUSE_RELEASED) {
 				eventPrototype.getComponent().dispatchEvent(
-						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_PRESSED, eventPrototype.getButton(), true)
-				);
-			} else if (eventID == MouseEvent.MOUSE_RELEASED) {
-				eventPrototype.getComponent().dispatchEvent(
-						rebuildMouseEvent(eventPrototype, MouseEvent.MOUSE_RELEASED, eventPrototype.getButton(), true)
+						rebuildMouseEvent(eventPrototype, eventID, eventPrototype.getButton(), true)
 				);
 			}
 			forceDefaultHandling = false;
@@ -255,7 +251,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 
 	@Override
 	public MouseEvent mouseDragged(MouseEvent mouseEvent) {
-		boolean isNotLeftMouse = mouseEvent.getButton() != MouseEvent.BUTTON1;
+		boolean isNotLeftMouse = !SwingUtilities.isLeftMouseButton(mouseEvent);
 		if (isNotLeftMouse || !isTouchPressed || shouldSkipProcessing(mouseEvent)) {
 			return mouseEvent;
 		}
