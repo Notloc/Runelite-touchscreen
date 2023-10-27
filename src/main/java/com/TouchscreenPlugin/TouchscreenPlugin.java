@@ -75,24 +75,34 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	// Widgets that suppress camera rotation
 	private final WidgetInfo[] BLOCKING_WIDGETS = new WidgetInfo[] {
 			WidgetInfo.BANK_CONTAINER,
+			WidgetInfo.BANK_SCROLLBAR,
 			WidgetInfo.BANK_INVENTORY_ITEMS_CONTAINER,
-			WidgetInfo.RESIZABLE_VIEWPORT_INVENTORY_CONTAINER,
-			WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_INVENTORY_CONTAINER,
-			WidgetInfo.WORLD_MAP_VIEW,
+			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER,
+
 			WidgetInfo.FIXED_VIEWPORT_INVENTORY_CONTAINER,
 			WidgetInfo.RESIZABLE_VIEWPORT_INVENTORY_CONTAINER,
 			WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_INVENTORY_CONTAINER,
-			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER,
+
+			WidgetInfo.WORLD_MAP_VIEW,
 			WidgetInfo.GENERIC_SCROLL_TEXT,
+
 			WidgetInfo.WORLD_SWITCHER_LIST,
 			WidgetInfo.WORLD_SWITCHER_BUTTON,
-			WidgetInfo.BANK_SCROLLBAR,
 	};
 
 	private final WidgetInfo[] MINIMAP_WIDGETS = new WidgetInfo[] {
 			WidgetInfo.FIXED_VIEWPORT_MINIMAP_DRAW_AREA,
 			WidgetInfo.RESIZABLE_MINIMAP_DRAW_AREA,
 			WidgetInfo.RESIZABLE_MINIMAP_STONES_DRAW_AREA
+	};
+
+	private final WidgetInfo[] ITEM_CONTAINER_WIDGETS = new WidgetInfo[] {
+			WidgetInfo.BANK_ITEM_CONTAINER,
+			WidgetInfo.BANK_INVENTORY_ITEMS_CONTAINER,
+			WidgetInfo.DEPOSIT_BOX_INVENTORY_ITEMS_CONTAINER,
+			WidgetInfo.FIXED_VIEWPORT_INVENTORY_CONTAINER,
+			WidgetInfo.RESIZABLE_VIEWPORT_INVENTORY_CONTAINER,
+			WidgetInfo.RESIZABLE_VIEWPORT_BOTTOM_LINE_INVENTORY_CONTAINER,
 	};
 
 	private EmulatedMouseEvent mouseEventToBeProcessed = null;
@@ -200,37 +210,42 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			return mouseEvent;
 		}
 
+		// Avoid disposal issue when debugging the lambda
+		MouseEvent captureEvent = rebuildMouseEvent(mouseEvent, mouseEvent.getID(), mouseEvent.getButton(), false);
+
 		// Get on client thread to do robust visibility checks on the widgets.
 		clientThread.invokeLater(() -> {
 			if (!isTouchPressed) {
 				return;
 			}
 
-			boolean isItemUnderMouse = -1 != findItemIdUnderMouse();
-			isScrollingOnMinimap = isMouseOverMinimap(mouseEvent.getPoint());
+			boolean isItemUnderMouse = -1 != findItemIdUnderPoint(new net.runelite.api.Point(captureEvent.getX(), captureEvent.getY()));
+			isScrollingOnMinimap = isMouseOverMinimap(captureEvent.getPoint());
 
-			if (!isItemUnderMouse && (isScrollingOnMinimap || isMouseOverScrollableGui(mouseEvent.getPoint()))) {
-				readyToRotate = false;
+			if (!isItemUnderMouse && (isScrollingOnMinimap || isMouseOverScrollableGui(captureEvent.getPoint()))) {
 				readyToScroll = true;
 				return;
 			}
 
 			isScrollingOnMinimap = false;
-			if (isMouseOverBlockingGui(mouseEvent.getPoint())) {
+			if (isItemUnderMouse || isMouseOverBlockingGui(captureEvent.getPoint())) {
 				isTouchingGui = true;
 				readyToRotate = false;
 
 				forceDefaultHandling = true;
-				mouseEvent.getComponent().dispatchEvent(
-						rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
+				captureEvent.getComponent().dispatchEvent(
+						rebuildMouseEvent(captureEvent, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, true)
 				);
 				forceDefaultHandling = false;
+
+				return;
 			}
+
+			readyToRotate = true;
 		});
 
 		resetLeftMouseState();
 		isTouchPressed = true;
-		readyToRotate = true;
 		touchStartPoint = mouseEvent.getPoint();
 		scrollingHoldPoint = touchStartPoint;
 		previousTouchPointForScrolling = touchStartPoint;
@@ -560,18 +575,38 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 		);
 	}
 
-	private int findItemIdUnderMouse() {
-		Widget widget = findWidgetUnderMouse();
+	private int findItemIdUnderPoint(net.runelite.api.Point point) {
+		Widget widget = findItemWidgetUnderPoint(point);
 		return widget == null ? -1 : widget.getItemId();
 	}
 
-	private Widget findWidgetUnderMouse() {
-		MenuEntry[] rightClickMenu = client.getMenuEntries();
-		if (rightClickMenu.length == 0) {
-			return null;
+	private Widget findItemWidgetUnderPoint(net.runelite.api.Point point) {
+		for (WidgetInfo info : ITEM_CONTAINER_WIDGETS) {
+			Widget widget = client.getWidget(info);
+			if (widget != null && !widget.isHidden() && widget.contains(point)) {
+				Widget found = findChildItemWidgetByPoint(widget, point);
+				if (found != null) {
+					return found;
+				}
+			}
 		}
 
-		MenuEntry menuEntry = rightClickMenu[rightClickMenu.length - 1];
-		return menuEntry.getWidget();
+		return null;
+	}
+
+	private Widget findChildItemWidgetByPoint(Widget parent, net.runelite.api.Point point) {
+		Widget[] children = parent.getChildren();
+		if (children == null) {
+			return null;
+		}
+		for (Widget child : children) {
+			if (child != null && !child.isSelfHidden() && child.contains(point)) {
+				if (child.getItemId() != -1) {
+					return child;
+				}
+				findChildItemWidgetByPoint(child, point);
+			}
+		}
+		return null;
 	}
 }
