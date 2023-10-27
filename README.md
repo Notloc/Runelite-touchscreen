@@ -11,7 +11,7 @@ Plugin that improves touchscreen support.
 * Zoom the minimap by swiping LEFT/RIGHT on the minimap
 * Drag to scroll certain dialogs (Bank/Quests/World Switcher/etc)
 * (Optional) Hold and release menu options
-- The touch-and-hold gesture used to open the right click menu can accept the highlighted option upon release
+    * The touch-and-hold gesture used to open the right click menu can accept the highlighted option upon release
 
 # Known Issues
 * Multi-touch gestures are not supported
