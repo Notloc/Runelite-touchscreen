@@ -26,7 +26,7 @@ import java.awt.event.MouseWheelEvent;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Touchscreen"
+		name = "Touchscreen"
 )
 public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWheelListener
 {
@@ -216,7 +216,7 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			}
 
 			isScrollingOnMinimap = false;
-			if (isItemUnderMouse || isMouseOverBlockingGui(mouseEvent.getPoint())) {
+			if (isMouseOverBlockingGui(mouseEvent.getPoint())) {
 				isTouchingGui = true;
 				readyToRotate = false;
 
@@ -433,18 +433,12 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 	}
 
 	private MouseEvent handleLeftMouseReleased(MouseEvent mouseEvent) {
-		if (shouldSkipProcessing(mouseEvent)) {
+		if (!isTouchPressed) {
 			return mouseEvent;
 		}
-
-		if (forceDefaultHandling || !isTouchPressed) {
-			isTouchPressed = false;
-			return mouseEvent;
-		}
-
 		isTouchPressed = false;
 
-		if (isTouchingGui) {
+		if (forceDefaultHandling || isTouchingGui || shouldSkipProcessing(mouseEvent)) {
 			return mouseEvent;
 		}
 
@@ -453,23 +447,18 @@ public class TouchscreenPlugin extends Plugin implements MouseListener, MouseWhe
 			mouseEvent.getComponent().dispatchEvent(
 					rebuildMouseEvent(mouseEvent, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON2, true)
 			);
-			return mouseEvent;
-		}
-
-		if (isScrolling) {
+		} else if (isScrolling) {
 			readyToScroll = false;
 			isScrolling = false;
-			mouseEvent.consume();
-			return mouseEvent;
+		} else {
+			queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_CLICKED, MouseEvent.BUTTON1);
 		}
 
-		queueEmulatedMouseEvent(mouseEvent, MouseEvent.MOUSE_CLICKED, MouseEvent.BUTTON1);
-		mouseEvent.consume();
 		return mouseEvent;
 	}
 
 	private MouseEvent handleRightClickReleased(MouseEvent mouseEvent) {
-		if (shouldSkipProcessing(mouseEvent) || forceDefaultHandling) {
+		if (forceDefaultHandling || shouldSkipProcessing(mouseEvent)) {
 			return mouseEvent;
 		}
 
