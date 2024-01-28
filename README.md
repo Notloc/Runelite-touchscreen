@@ -1,3 +1,5 @@
+#(Ultimately rejected due to concerns around the input modifications required to fix the primary issues potentially triggering anti-cheat systems)
+
 # Touchscreen Support
 Plugin that improves touchscreen support.
 
