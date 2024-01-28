@@ -1,4 +1,5 @@
-# (Ultimately rejected due to concerns around the input modifications required to fix the primary issues potentially triggering anti-cheat systems)
+# Unable to be added to Runelite.
+Due to concerns around the input modifications required to fix the primary touchscreen issues potentially triggering anti-cheat systems.
 
 # Touchscreen Support
 Plugin that improves touchscreen support.
